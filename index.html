@@ -77,19 +77,13 @@
   <div class="panel">
     <label style="display:block">source preset</label>
     <select id="preset">
-      <option value="assets/selfsimilar.png|8|0|20|0">Droste gallery corridor (q=8)</option>
+      <option value="assets/selfsimilar.png|8|0">Droste gallery corridor (q=8)</option>
     </select>
 
     <div class="chk" style="margin-top:16px"><input type="checkbox" id="twist" checked><label style="margin:0" for="twist">apply twist (off = plain Droste zoom)</label></div>
 
-    <label>view zoom <span id="vzoomV"></span></label>
-    <input type="range" id="vzoom" min="-2" max="3" step="0.01" value="0">
-
-    <label>recursion phase <span id="sscaleV"></span></label>
-    <input type="range" id="sscale" min="-2" max="2" step="0.01" value="0">
-
-    <label>rotation (deg) <span id="rotV"></span></label>
-    <input type="range" id="rot" min="-180" max="180" step="1" value="20">
+    <label>view zoom / recursion phase <span id="vzoomV"></span></label>
+    <input type="range" id="vzoom" min="-3" max="3" step="0.01" value="0">
 
     <div class="row">
       <button id="reset">Reset rectangle</button>
@@ -160,8 +154,6 @@ function render(quality){
   const M = quality===0 ? 225 : N;     // draft res while dragging
   const doTwist = $('twist').checked;
   const vzoom = parseFloat($('vzoom').value);
-  const sscale = parseFloat($('sscale').value);
-  const rot = parseFloat($('rot').value)*Math.PI/180;
   const {q,Fx,Fy} = rectParams();
 
   // Seamless Droste exponent: alpha = 1 - i*ln(q)/(2*pi).
@@ -170,8 +162,9 @@ function render(quality){
   let aRe = 1, aIm = -lnq/twoPi;
   if(!doTwist){ aRe=1; aIm=0; }
 
-  const mMag = Math.exp(vzoom), mRe=mMag*Math.cos(rot), mIm=mMag*Math.sin(rot);
-  const srcK = Math.exp(sscale);
+  // view zoom = scale of the output plane about F (also shifts recursion phase)
+  const mMag = Math.exp(vzoom), mRe=mMag, mIm=0;
+  const srcK = 1;
   const invq = 1/q;
 
   const img = octx.createImageData(M,M);
@@ -223,8 +216,6 @@ function render(quality){
 
 function updateLabels(aRe,aIm,q,Fx,Fy){
   $('vzoomV').textContent = (+$('vzoom').value).toFixed(2);
-  $('sscaleV').textContent = (+$('sscale').value).toFixed(2);
-  $('rotV').textContent = $('rot').value+'°';
   $('fx').innerHTML =
     'q = image / copy = <code>'+q.toFixed(2)+'</code><br>'+
     'fixed point F = <code>('+Fx.toFixed(2)+', '+Fy.toFixed(2)+')</code><br>'+
@@ -312,38 +303,42 @@ ov.addEventListener('pointercancel',endDrag);
 let raf=0;
 function scheduleRender(q){ if(raf) return; raf=requestAnimationFrame(()=>{raf=0; render(q);}); }
 
-['vzoom','sscale','rot'].forEach(id=>$(id).addEventListener('input',()=>render(1)));
+$('vzoom').addEventListener('input',()=>render(1));
 $('twist').addEventListener('change',()=>render(1));
 $('save').addEventListener('click',()=>{
   const A=document.createElement('a');
   A.download='escher-warp.png'; A.href=out.toDataURL('image/png'); A.click();
 });
-$('reset').addEventListener('click',()=>applyPreset());
 
-function applyPreset(){
-  const [path,qv,vz,rt,ss]=$('preset').value.split('|');
-  $('vzoom').value=vz; $('rot').value=rt; $('sscale').value=ss; $('twist').checked=true;
-  a = 1/parseFloat(qv); RCx=0; RCy=0;     // default rect: centered, size 1/q
+// Reset only the parameters (rectangle + sliders) — keep the current image.
+function resetParams(){
+  a=1/8; RCx=0; RCy=0; $('vzoom').value=0; $('twist').checked=true;
+  drawOverlay(); render(1);
+}
+$('reset').addEventListener('click',resetParams);
+
+// Load a new source image (preset or upload), then reset params for it.
+function loadImage(path, q){
   const im=new Image(); im.crossOrigin='anonymous';
-  im.onload=()=>{ srcImg.src=path; loadSource(im); };
+  im.onload=()=>{ a=1/(q||8); RCx=0; RCy=0; $('twist').checked=true;
+                  srcImg.src=path; loadSource(im); };
   im.src=path;
 }
-$('preset').addEventListener('change',applyPreset);
+$('preset').addEventListener('change',()=>{
+  const [path,qv,vz]=$('preset').value.split('|');
+  $('vzoom').value=vz; loadImage(path, parseFloat(qv));
+});
 $('upload').addEventListener('change',e=>{
   const f=e.target.files[0]; if(!f) return;
-  const url=URL.createObjectURL(f);
-  const im=new Image();
-  im.onload=()=>{ a=1/8; RCx=0; RCy=0; loadSource(im); URL.revokeObjectURL(url); };
-  im.src=url;
+  $('vzoom').value=0;
+  loadImage(URL.createObjectURL(f), 8);   // url kept alive so the <img> keeps showing it
 });
 
 // init
 (function init(){
   const p=new URLSearchParams(location.search);
-  const [path,qv,vz,rt,ss]=$('preset').value.split('|');
+  const [path,qv,vz]=$('preset').value.split('|');
   $('vzoom').value = p.get('vzoom') ?? vz;
-  $('rot').value   = p.get('rot')   ?? rt;
-  $('sscale').value= p.get('sscale')?? ss;
   if(p.has('twist')) $('twist').checked = p.get('twist')!=='0';
   a = 1/parseFloat(p.get('q') ?? qv);
   RCx = parseFloat(p.get('rcx') ?? 0); RCy = parseFloat(p.get('rcy') ?? 0);
