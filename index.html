@@ -5,29 +5,32 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Escher Warp — the Droste effect</title>
 <style>
-  :root { --bg:#11131a; --panel:#1b1f2b; --ink:#e8e9ee; --muted:#9aa0b0; --accent:#7aa2f7; }
+  :root { --bg:#11131a; --panel:#1b1f2b; --ink:#e8e9ee; --muted:#9aa0b0; --accent:#7aa2f7; --size:480px; }
   * { box-sizing:border-box; }
   body {
     margin:0; background:var(--bg); color:var(--ink);
     font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
-    display:flex; flex-wrap:wrap; gap:24px; padding:24px; align-items:flex-start;
+    min-height:100vh; display:grid; place-content:center; padding:24px;
   }
-  h1 { font-size:20px; margin:0 0 4px; }
-  .sub { color:var(--muted); margin:0 0 16px; max-width:46ch; }
+  .app { width:100%; max-width:1400px; }
+  header { max-width:70ch; margin:0 0 20px; }
+  h1 { font-size:22px; margin:0 0 6px; }
+  .sub { color:var(--muted); margin:0; }
   .sub code { color:var(--accent); }
-  .stage { display:flex; gap:20px; flex-wrap:wrap; }
+  .sub a { color:var(--accent); }
+  main { display:flex; flex-wrap:wrap; gap:22px; align-items:flex-start; justify-content:center; }
   figure { margin:0; }
   figcaption { color:var(--muted); margin-top:8px; font-size:12px; text-align:center; }
-  .srcwrap { position:relative; width:450px; height:450px; }
+  .srcwrap { position:relative; width:var(--size); height:var(--size); }
   canvas, .srcimg {
     background:#000; border-radius:10px; display:block;
     box-shadow:0 8px 30px rgba(0,0,0,.4);
-    width:450px; height:450px; image-rendering:auto;
+    width:var(--size); height:var(--size); image-rendering:auto;
   }
   #ov { position:absolute; inset:0; box-shadow:none; background:transparent; cursor:default; }
   .panel {
     background:var(--panel); border-radius:14px; padding:18px 20px;
-    min-width:300px; max-width:340px;
+    width:320px;
   }
   label { margin:14px 0 4px; color:var(--muted); font-size:12px;
           display:flex; justify-content:space-between; }
@@ -47,7 +50,8 @@
 </style>
 </head>
 <body>
-  <div>
+ <div class="app">
+  <header>
     <h1>Escher Warp</h1>
     <p class="sub">
       Turn a picture that contains a smaller copy of itself into the endless
@@ -57,20 +61,19 @@
       your own self-similar image. Based on 3Blue1Brown's video
       <a href="https://www.youtube.com/watch?v=ldxFjLJ3rVY" target="_blank" rel="noopener">“How (and why) to take a logarithm of an image.”</a>
     </p>
-    <div class="stage">
+  </header>
+  <main>
       <figure>
         <div class="srcwrap">
           <img id="src" class="srcimg" src="assets/selfsimilar.png" crossorigin="anonymous" alt="straight">
-          <canvas id="ov" width="450" height="450"></canvas>
+          <canvas id="ov" width="480" height="480"></canvas>
         </div>
         <figcaption>input — drag the self-similarity rectangle</figcaption>
       </figure>
       <figure>
-        <canvas id="out" width="450" height="450"></canvas>
+        <canvas id="out" width="480" height="480"></canvas>
         <figcaption>output — Escher twist</figcaption>
       </figure>
-    </div>
-  </div>
 
   <div class="panel">
     <div class="chk"><input type="checkbox" id="twist" checked><label style="margin:0" for="twist">apply twist (off = plain Droste zoom)</label></div>
@@ -92,15 +95,15 @@
     </div>
     <label style="margin-top:14px;display:block">upload your own straight (self-similar) image</label>
     <input type="file" id="upload" accept="image/*">
-
   </div>
-
+  </main>
+ </div>
 
 <script>
 const $ = id => document.getElementById(id);
 const out = $('out');
 const ov = $('ov'), ovx = ov.getContext('2d');
-const N = 450;
+const N = 480;
 out.width = out.height = N;
 // slider bounds are constant; the slider spans exactly one seamless loop, so its
 // two ends always look identical no matter how q changes from square edits.
