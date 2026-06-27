@@ -80,7 +80,11 @@
     <input type="range" id="vzoom" min="-3" max="3" step="0.01" value="0">
 
     <div class="row">
-      <button id="anim">▶ Animate zoom</button>
+      <button id="zin">⊕ Zoom in</button>
+      <button id="zout">⊖ Zoom out</button>
+      <button class="ghost" id="pause">⏸ Pause</button>
+    </div>
+    <div class="row">
       <button class="ghost" id="reset">Reset rectangle</button>
       <button class="ghost" id="save">Save PNG</button>
     </div>
@@ -325,36 +329,32 @@ function scheduleRender(q){ if(raf) return; raf=requestAnimationFrame(()=>{raf=0
 $('vzoom').addEventListener('input',()=>{ stopAnim(); render(1); });
 $('twist').addEventListener('change',()=>render(1));
 
-// ---- zoom animation: in -> pause -> out -> pause, looping ----
-let anim=null;
-const VMIN=-3, VMAX=3, T_IN=4200, T_OUT=4200, T_PAUSE=900;
-const CYCLE=T_IN+T_PAUSE+T_OUT+T_PAUSE;
-const smooth=t=>t*t*(3-2*t);
+// ---- zoom animation: continuous in / out, looping seamlessly ----
+// Zooming by one recursion period (ln q) returns to the same image, so we wrap
+// the zoom value by ln q -> the loop is seamless and the value stays bounded.
+let anim=null;            // {dir:+1|-1, last}
+const VMIN=-3, VMAX=3, SPEED=0.55;   // zoom units per second
 function animFrame(now){
   if(!anim) return;
-  const t=(now-anim.t0)%CYCLE;
-  let v;
-  if(t<T_IN)                       v=VMIN+(VMAX-VMIN)*smooth(t/T_IN);
-  else if(t<T_IN+T_PAUSE)          v=VMAX;
-  else if(t<T_IN+T_PAUSE+T_OUT)    v=VMAX-(VMAX-VMIN)*smooth((t-T_IN-T_PAUSE)/T_OUT);
-  else                             v=VMIN;
+  const dt=Math.min(0.1,(now-anim.last)/1000); anim.last=now;
+  let v=parseFloat($('vzoom').value)+anim.dir*SPEED*dt;
+  const P=Math.log(1/a);             // recursion period = ln q (q = 1/a)
+  while(v>=VMAX) v-=P;  while(v<VMIN) v+=P;
   $('vzoom').value=v;
-  render(0);                       // draft res while animating
+  render(1);                         // full quality, same as manual sliding
   anim.raf=requestAnimationFrame(animFrame);
 }
-function startAnim(){
-  if(anim) return;
-  anim={t0:performance.now(), raf:0};
-  anim.raf=requestAnimationFrame(animFrame);
-  $('anim').textContent='⏸ Stop';
+function startAnim(dir){
+  if(anim){ anim.dir=dir; }
+  else { anim={dir, last:performance.now(), raf:0}; anim.raf=requestAnimationFrame(animFrame); }
 }
 function stopAnim(){
   if(!anim) return;
   cancelAnimationFrame(anim.raf); anim=null;
-  $('anim').textContent='▶ Animate zoom';
-  render(1);                       // settle at full res
 }
-$('anim').addEventListener('click',()=>{ anim?stopAnim():startAnim(); });
+$('zin').addEventListener('click',()=>startAnim(+1));
+$('zout').addEventListener('click',()=>startAnim(-1));
+$('pause').addEventListener('click',stopAnim);
 $('save').addEventListener('click',()=>{
   const A=document.createElement('a');
   A.download='escher-warp.png'; A.href=out.toDataURL('image/png'); A.click();
@@ -390,7 +390,7 @@ const STARTER='assets/selfsimilar.png', STARTER_Q=8;
   a = 1/parseFloat(p.get('q') ?? STARTER_Q);
   RCx = parseFloat(p.get('rcx') ?? 0); RCy = parseFloat(p.get('rcy') ?? 0);
   srcImg.src=STARTER;
-  const go=()=>{ loadSource(srcImg); if(p.get('play')==='1') startAnim(); };
+  const go=()=>{ loadSource(srcImg); if(p.get('play')==='1') startAnim(+1); };
   if(srcImg.complete && srcImg.naturalWidth) go();
   else srcImg.onload=go;
 })();
