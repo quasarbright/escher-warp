@@ -14,7 +14,9 @@ The page reduces coordinates by the SAME L-inf norm, so this lines up exactly.
 """
 import numpy as np, sys, math
 
-W = 800
+OUT = 800        # final image size
+SS = 4           # supersampling factor: baked-in anti-aliasing (one-time)
+W = OUT * SS     # work resolution
 q = 8.0          # self-similarity factor (use the same q in the page)
 
 xs = np.linspace(-1, 1, W)
@@ -92,8 +94,10 @@ img[lip] = 0.70
 img[rho < 1.0 / q] = 0.04
 
 g = np.clip(img, 0, 1)
+# box-downsample SSxSS -> bake the anti-aliasing into the final image
+g = g.reshape(OUT, SS, OUT, SS).mean(axis=(1, 3))
 rgb = (np.dstack([g, g, g]) * 255).astype(np.uint8)
 with open(sys.argv[1], 'wb') as f:
-    f.write(b'P6\n%d %d\n255\n' % (W, W))
+    f.write(b'P6\n%d %d\n255\n' % (OUT, OUT))
     f.write(rgb.tobytes())
-print("wrote", sys.argv[1], "q=", q)
+print("wrote", sys.argv[1], OUT, "x", OUT, "(SS=%d)" % SS, "q=", q)
