@@ -133,6 +133,7 @@ function sampleBilinear(u,v){ // u,v in [0,1]
 // rect = the shrunk copy of the whole image: half-size `a` (square in normalized
 // coords because it is locked to the source aspect ratio), centered at (RCx,RCy).
 let RCx=0, RCy=0, a=1/8;
+let phase=0;   // animation phase along the seamless zoom flow; period 1
 
 function rectParams(){
   const q = 1/a;                       // image / copy size ratio
@@ -148,9 +149,9 @@ function gnorm(ux,uy,Fx,Fy){
   return Math.max(gx,gy);
 }
 
-function render(quality){
+function render(){
   if(!srcData) return;
-  const M = quality===0 ? 225 : N;     // draft res while dragging
+  const M = N;
   const doTwist = $('twist').checked;
   const vzoom = parseFloat($('vzoom').value);
   const {q,Fx,Fy} = rectParams();
@@ -161,8 +162,14 @@ function render(quality){
   let aRe = 1, aIm = -lnq/twoPi;
   if(!doTwist){ aRe=1; aIm=0; }
 
-  // view zoom = scale of the output plane about F (also shifts recursion phase)
-  const mMag = Math.exp(vzoom), mRe=mMag, mIm=0;
+  // Output-plane multiply m = e^vzoom (manual radial framing) times the seamless
+  // zoom flow exp(phase * lnq/alpha). lnq/alpha scales AND rotates so that one
+  // unit of phase reproduces the image exactly (the output self-similarity S).
+  const b = lnq/twoPi, denom = 1 + b*b;        // alpha = 1 - i*b
+  const flowRe = aIm===0 ? lnq : lnq/denom;    // Re(lnq/alpha)  (lnq if no twist)
+  const flowIm = aIm===0 ? 0   : lnq*b/denom;  // Im(lnq/alpha)
+  const lmRe = vzoom + phase*flowRe, lmIm = phase*flowIm;
+  const mMag = Math.exp(lmRe), mRe=mMag*Math.cos(lmIm), mIm=mMag*Math.sin(lmIm);
   const srcK = 1;
   const invq = 1/q;
 
@@ -202,14 +209,7 @@ function render(quality){
       data[o]=col[0]; data[o+1]=col[1]; data[o+2]=col[2]; data[o+3]=255;
     }
   }
-  if(M===N){ octx.putImageData(img,0,0); }
-  else {
-    // draft: paint small then scale up
-    const tmp=document.createElement('canvas'); tmp.width=tmp.height=M;
-    tmp.getContext('2d').putImageData(img,0,0);
-    octx.imageSmoothingEnabled=true;
-    octx.clearRect(0,0,N,N); octx.drawImage(tmp,0,0,N,N);
-  }
+  octx.putImageData(img,0,0);
   updateLabels(aRe,aIm,q,Fx,Fy);
 }
 
@@ -311,7 +311,7 @@ ov.addEventListener('pointermove',e=>{
     RCx=Fx*(1-a); RCy=Fy*(1-a);            // center that keeps F unchanged
   }
   drawOverlay();
-  scheduleRender(0);
+  scheduleRender(1);
 });
 function endDrag(e){
   if(!drag) return;
@@ -326,34 +326,28 @@ ov.addEventListener('pointercancel',endDrag);
 let raf=0;
 function scheduleRender(q){ if(raf) return; raf=requestAnimationFrame(()=>{raf=0; render(q);}); }
 
-$('vzoom').addEventListener('input',()=>{ stopAnim(); render(1); });
+$('vzoom').addEventListener('input',()=>render(1));   // manual framing, independent of the spin
 $('twist').addEventListener('change',()=>render(1));
 
-// ---- zoom animation: continuous in / out, looping seamlessly ----
-// Zooming by one recursion period (ln q) returns to the same image, so we wrap
-// the zoom value by ln q -> the loop is seamless and the value stays bounded.
-let anim=null;            // {dir:+1|-1, last}
-const VMIN=-3, VMAX=3, SPEED=0.55;   // zoom units per second
+// ---- seamless infinite zoom: advance `phase` along the output self-similarity ----
+// Period in phase is exactly 1 (phase += 1 reproduces the image), so we wrap mod 1
+// and the zoom never stops and never drifts. Independent of the manual slider.
+let anim=null;                       // {dir:+1|-1, last}
+const SPEED=0.16;                    // loops per second
 function animFrame(now){
   if(!anim) return;
   const dt=Math.min(0.1,(now-anim.last)/1000); anim.last=now;
-  let v=parseFloat($('vzoom').value)+anim.dir*SPEED*dt;
-  const P=Math.log(1/a);             // recursion period = ln q (q = 1/a)
-  while(v>=VMAX) v-=P;  while(v<VMIN) v+=P;
-  $('vzoom').value=v;
-  render(1);                         // full quality, same as manual sliding
+  phase=(phase + anim.dir*SPEED*dt) % 1; if(phase<0) phase+=1;
+  render(1);
   anim.raf=requestAnimationFrame(animFrame);
 }
 function startAnim(dir){
   if(anim){ anim.dir=dir; }
   else { anim={dir, last:performance.now(), raf:0}; anim.raf=requestAnimationFrame(animFrame); }
 }
-function stopAnim(){
-  if(!anim) return;
-  cancelAnimationFrame(anim.raf); anim=null;
-}
-$('zin').addEventListener('click',()=>startAnim(+1));
-$('zout').addEventListener('click',()=>startAnim(-1));
+function stopAnim(){ if(anim){ cancelAnimationFrame(anim.raf); anim=null; } }
+$('zin').addEventListener('click',()=>startAnim(-1));   // zoom in = move inward
+$('zout').addEventListener('click',()=>startAnim(+1));
 $('pause').addEventListener('click',stopAnim);
 $('save').addEventListener('click',()=>{
   const A=document.createElement('a');
@@ -363,7 +357,7 @@ $('save').addEventListener('click',()=>{
 // Reset only the parameters (rectangle + sliders) — keep the current image.
 function resetParams(){
   stopAnim();
-  a=1/8; RCx=0; RCy=0; $('vzoom').value=0; $('twist').checked=true;
+  a=1/8; RCx=0; RCy=0; phase=0; $('vzoom').value=0; $('twist').checked=true;
   drawOverlay(); render(1);
 }
 $('reset').addEventListener('click',resetParams);
@@ -377,7 +371,7 @@ function loadImage(path, q){
 }
 $('upload').addEventListener('change',e=>{
   const f=e.target.files[0]; if(!f) return;
-  stopAnim(); $('vzoom').value=0;
+  stopAnim(); phase=0; $('vzoom').value=0;
   loadImage(URL.createObjectURL(f), 8);   // url kept alive so the <img> keeps showing it
 });
 
