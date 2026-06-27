@@ -78,10 +78,10 @@
     <div class="chk"><input type="checkbox" id="centerout"><label style="margin:0" for="centerout">center the output spiral</label></div>
 
     <label>view zoom (full loop end-to-end) <span id="vzoomV"></span></label>
-    <input type="range" id="vzoom" min="0" max="1" step="0.005" value="0">
+    <input type="range" id="vzoom" min="0" max="1" step="any" value="0">
 
     <label>zoom speed <span id="speedV"></span></label>
-    <input type="range" id="speed" min="0.02" max="1" step="0.01" value="0.16">
+    <input type="range" id="speed" min="0.02" max="2" step="0.01" value="0.16">
 
     <div class="row">
       <button id="zin">⊕ Zoom in</button>
@@ -175,7 +175,7 @@ function render(){
   const b = lnq/twoPi, denom = 1 + b*b;        // alpha = 1 - i*b
   const flowRe = aIm===0 ? lnq : lnq/denom;    // Re(lnq/alpha)  (lnq if no twist)
   const flowIm = aIm===0 ? 0   : lnq*b/denom;  // Im(lnq/alpha)
-  const t = (vzoom - VMIN)/(VMAX - VMIN);
+  const t = (VMAX - vzoom)/(VMAX - VMIN);   // increasing the slider zooms IN
   const lmRe = t*flowRe, lmIm = t*flowIm;
   const mMag = Math.exp(lmRe), mRe=mMag*Math.cos(lmIm), mIm=mMag*Math.sin(lmIm);
   const srcK = 1;
@@ -364,8 +364,8 @@ function startAnim(dir){
   else { anim={dir, last:performance.now(), raf:0}; anim.raf=requestAnimationFrame(animFrame); }
 }
 function stopAnim(){ if(anim){ cancelAnimationFrame(anim.raf); anim=null; } }
-$('zin').addEventListener('click',()=>startAnim(-1));   // zoom in = move inward
-$('zout').addEventListener('click',()=>startAnim(+1));
+$('zin').addEventListener('click',()=>startAnim(+1));   // increase slider = zoom in
+$('zout').addEventListener('click',()=>startAnim(-1));
 $('pause').addEventListener('click',stopAnim);
 $('save').addEventListener('click',()=>{
   const A=document.createElement('a');
