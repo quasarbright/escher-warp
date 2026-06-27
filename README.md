@@ -33,6 +33,12 @@ the square `max(|x|,|y|)` norm). The result is seamless **iff** the rectangle
 matches the image's actual self-similarity — which is exactly how you tell the
 app where the self-similarity is when you upload your own Droste image.
 
+## Rendering
+
+The Droste map runs per-pixel in a WebGL fragment shader, with NxN supersampling
+for anti-aliasing (hardware mipmaps would seam at the mod-`q` fold, so we
+supersample instead). The fold is closed-form: `k = floor(log_q g) + 1`.
+
 ## Running
 
 It's a single static page. Serve the folder and open `index.html`:
@@ -41,7 +47,7 @@ It's a single static page. Serve the folder and open `index.html`:
 python3 -m http.server
 ```
 
-(A server is needed so the canvas can read the source image without tainting.)
+(A server is needed so the texture upload isn't blocked by cross-origin rules.)
 
 ## The source image
 

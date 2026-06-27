@@ -100,40 +100,72 @@
 
 <script>
 const $ = id => document.getElementById(id);
-const out = $('out'), octx = out.getContext('2d');
+const out = $('out');
 const ov = $('ov'), ovx = ov.getContext('2d');
 const N = 450;
+out.width = out.height = N;
 // slider bounds are constant; the slider spans exactly one seamless loop, so its
 // two ends always look identical no matter how q changes from square edits.
 const VMIN = +$('vzoom').min, VMAX = +$('vzoom').max;
-
-// ---- source buffer ----
-let srcData=null, SW=0, SH=0;
 const srcImg = $('src');
 
-function loadSource(imgEl){
-  const c = document.createElement('canvas');
-  SW = c.width = imgEl.naturalWidth;
-  SH = c.height = imgEl.naturalHeight;
-  c.getContext('2d').drawImage(imgEl,0,0);
-  srcData = c.getContext('2d').getImageData(0,0,SW,SH).data;
-  render(); drawOverlay();
-}
-
-function sampleBilinear(u,v){ // u,v in [0,1]
-  let fx = u*(SW-1), fy=v*(SH-1);
-  if(fx<0)fx=0; if(fx>SW-1)fx=SW-1; if(fy<0)fy=0; if(fy>SH-1)fy=SH-1;
-  const x0=Math.floor(fx), y0=Math.floor(fy);
-  const x1=Math.min(x0+1,SW-1), y1=Math.min(y0+1,SH-1);
-  const tx=fx-x0, ty=fy-y0;
-  const i00=(y0*SW+x0)*4, i10=(y0*SW+x1)*4, i01=(y1*SW+x0)*4, i11=(y1*SW+x1)*4;
-  const o=[0,0,0];
-  for(let k=0;k<3;k++){
-    const a=srcData[i00+k]*(1-tx)+srcData[i10+k]*tx;
-    const b=srcData[i01+k]*(1-tx)+srcData[i11+k]*tx;
-    o[k]=a*(1-ty)+b*ty;
+// ---- WebGL: the Droste map runs per-pixel in a fragment shader, with NxN
+// supersampling for anti-aliasing (mipmaps would seam at the mod-q fold). ----
+const gl = out.getContext('webgl', {antialias:true, preserveDrawingBuffer:true});
+const VS = `attribute vec2 pos; void main(){ gl_Position=vec4(pos,0.0,1.0); }`;
+const FS = `precision highp float;
+uniform sampler2D tex; uniform vec2 uRes,F,O;
+uniform float aRe,aIm,mRe,mIm,lnq,ssN;
+vec2 cmul(vec2 a,vec2 b){ return vec2(a.x*b.x-a.y*b.y, a.x*b.y+a.y*b.x); }
+vec3 one(vec2 frag){
+  vec2 z = vec2(frag.x/uRes.x*2.0-1.0, frag.y/uRes.y*2.0-1.0) - O;
+  z = cmul(z, vec2(mRe,mIm));               // zoom flow (scale + rotation)
+  float r = length(z); vec2 p;
+  if(r==0.0){ p=F; } else {
+    float lr=log(r), th=atan(z.y,z.x);
+    float wr=aRe*lr-aIm*th, wi=aIm*lr+aRe*th;   // w' = alpha*(lr + i*th)
+    float em=exp(wr);
+    p = F + vec2(em*cos(wi), em*sin(wi));        // p = F + exp(w')
   }
-  return o;
+  vec2 u = p-F;                              // fold about F into ring [1/q,1)
+  float gx = u.x>=0.0 ? u.x/max(1e-4,1.0-F.x) : (-u.x)/max(1e-4,1.0+F.x);
+  float gy = u.y>=0.0 ? u.y/max(1e-4,1.0-F.y) : (-u.y)/max(1e-4,1.0+F.y);
+  float g = max(gx,gy);
+  if(g>0.0){ float k=floor(log(g)/lnq)+1.0; p = F + u*exp(-k*lnq); }
+  return texture2D(tex, (p+1.0)*0.5).rgb;
+}
+void main(){
+  vec2 frag = vec2(gl_FragCoord.x, uRes.y-gl_FragCoord.y);  // match top-left origin
+  vec3 c = vec3(0.0);
+  for(float i=0.0;i<4.0;i++){ if(i>=ssN) break;
+    for(float j=0.0;j<4.0;j++){ if(j>=ssN) break;
+      c += one(frag + (vec2(i,j)+0.5)/ssN - 0.5);
+    }}
+  gl_FragColor = vec4(c/(ssN*ssN), 1.0);
+}`;
+function compile(type,src){ const s=gl.createShader(type); gl.shaderSource(s,src); gl.compileShader(s);
+  if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)) throw gl.getShaderInfoLog(s); return s; }
+const prog=gl.createProgram();
+gl.attachShader(prog,compile(gl.VERTEX_SHADER,VS));
+gl.attachShader(prog,compile(gl.FRAGMENT_SHADER,FS));
+gl.linkProgram(prog); gl.useProgram(prog);
+const quad=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,quad);
+gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1, 3,-1, -1,3]),gl.STATIC_DRAW);
+const locPos=gl.getAttribLocation(prog,'pos');
+gl.enableVertexAttribArray(locPos); gl.vertexAttribPointer(locPos,2,gl.FLOAT,false,0,0);
+const U={}; ['uRes','F','O','aRe','aIm','mRe','mIm','lnq','ssN'].forEach(n=>U[n]=gl.getUniformLocation(prog,n));
+gl.viewport(0,0,N,N);
+
+let tex=null;
+function loadSource(imgEl){
+  if(!tex) tex=gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D,tex);
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGB,gl.RGB,gl.UNSIGNED_BYTE,imgEl);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+  render(); drawOverlay();
 }
 
 // ---- self-similarity rectangle, in normalized [-1,1] coords ----
@@ -148,81 +180,39 @@ function rectParams(){
   return {q, Fx, Fy};
 }
 
-// off-center L-inf "radius": g==1 on the image border, g==1/q on the rect border
-function gnorm(ux,uy,Fx,Fy){
-  const gx = ux>=0 ? ux/Math.max(1e-4, 1-Fx) : (-ux)/Math.max(1e-4, 1+Fx);
-  const gy = uy>=0 ? uy/Math.max(1e-4, 1-Fy) : (-uy)/Math.max(1e-4, 1+Fy);
-  return Math.max(gx,gy);
-}
-
 function render(){
-  if(!srcData) return;
-  const M = N;
+  if(!tex) return;
   const doTwist = $('twist').checked;
   const vzoom = parseFloat($('vzoom').value);
   const {q,Fx,Fy} = rectParams();
 
   // Seamless Droste exponent: alpha = 1 - i*ln(q)/(2*pi).
-  const lnq = Math.log(q);
-  const twoPi = 2*Math.PI;
+  const lnq = Math.log(q), twoPi = 2*Math.PI;
   let aRe = 1, aIm = -lnq/twoPi;
   if(!doTwist){ aRe=1; aIm=0; }
 
   // Output-plane multiply m = exp(t * lnq/alpha), the output self-similarity flow:
-  // lnq/alpha scales AND rotates so that t -> t+1 reproduces the image exactly.
-  // t = slider mapped to 0..1, so both slider ends match and the loop length
-  // auto-adjusts to q (square edits) while slider bounds stay 0..1.
-  const b = lnq/twoPi, denom = 1 + b*b;        // alpha = 1 - i*b
-  const flowRe = aIm===0 ? lnq : lnq/denom;    // Re(lnq/alpha)  (lnq if no twist)
-  const flowIm = aIm===0 ? 0   : lnq*b/denom;  // Im(lnq/alpha)
-  const t = (VMAX - vzoom)/(VMAX - VMIN);   // increasing the slider zooms IN
+  // lnq/alpha scales AND rotates so t -> t+1 reproduces the image exactly. t maps
+  // the slider (0..1) to one loop; increasing the slider zooms in.
+  const b = lnq/twoPi, denom = 1 + b*b;
+  const flowRe = aIm===0 ? lnq : lnq/denom;
+  const flowIm = aIm===0 ? 0   : lnq*b/denom;
+  const t = (VMAX - vzoom)/(VMAX - VMIN);
   const lmRe = t*flowRe, lmIm = t*flowIm;
   const mMag = Math.exp(lmRe), mRe=mMag*Math.cos(lmIm), mIm=mMag*Math.sin(lmIm);
-  const srcK = 1;
-  const invq = 1/q;
 
   // output spiral center O: at F (off) or canvas center (on). Source still folds
   // about F, so the recursion stays correct -- this just reframes the output.
   const Ox = $('centerout').checked ? 0 : Fx;
   const Oy = $('centerout').checked ? 0 : Fy;
+  const ss = anim ? 2 : 3;          // supersample grid (lighter while animating)
 
-  const img = octx.createImageData(M,M);
-  const data = img.data;
-  const half = M/2;
-
-  for(let py=0; py<M; py++){
-    for(let px=0; px<M; px++){
-      // output normalized coord, spiral centered on O
-      let zr = (px-half)/half - Ox;
-      let zi = (py-half)/half - Oy;
-      // apply the zoom flow (scale + rotation)
-      let tr = zr*mRe - zi*mIm, ti = zr*mIm + zi*mRe;
-      zr=tr; zi=ti;
-
-      const r = Math.hypot(zr,zi);
-      let R,I;
-      if(r===0){ R=0; I=0; }
-      else {
-        const lr = Math.log(r), th = Math.atan2(zi,zr);
-        const wr = aRe*lr - aIm*th, wi = aIm*lr + aRe*th;
-        const em = Math.exp(wr);
-        R = em*Math.cos(wi); I = em*Math.sin(wi);
-      }
-      // source point p = F + srcK * exp(w)
-      let pr = Fx + R*srcK, pi = Fy + I*srcK;
-      // fold by scaling about F until inside the image ring [1/q,1)
-      let g = gnorm(pr-Fx, pi-Fy, Fx, Fy);
-      if(g>0){
-        while(g>=1){ pr=Fx+(pr-Fx)*invq; pi=Fy+(pi-Fy)*invq; g*=invq; }
-        while(g<invq){ pr=Fx+(pr-Fx)*q; pi=Fy+(pi-Fy)*q; g*=q; }
-      }
-      const u=(pr+1)/2, v=(pi+1)/2;
-      const col=sampleBilinear(u,v);
-      const o=(py*M+px)*4;
-      data[o]=col[0]; data[o+1]=col[1]; data[o+2]=col[2]; data[o+3]=255;
-    }
-  }
-  octx.putImageData(img,0,0);
+  gl.useProgram(prog);
+  gl.uniform2f(U.uRes,N,N); gl.uniform2f(U.F,Fx,Fy); gl.uniform2f(U.O,Ox,Oy);
+  gl.uniform1f(U.aRe,aRe); gl.uniform1f(U.aIm,aIm);
+  gl.uniform1f(U.mRe,mRe); gl.uniform1f(U.mIm,mIm);
+  gl.uniform1f(U.lnq,lnq); gl.uniform1f(U.ssN,ss);
+  gl.drawArrays(gl.TRIANGLES,0,3);
   updateLabels(aRe,aIm,q,Fx,Fy);
 }
 
