@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Escher Warp — the Droste effect</title>
+<style>
+  :root { --bg:#11131a; --panel:#1b1f2b; --ink:#e8e9ee; --muted:#9aa0b0; --accent:#7aa2f7; }
+  * { box-sizing:border-box; }
+  body {
+    margin:0; background:var(--bg); color:var(--ink);
+    font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+    display:flex; flex-wrap:wrap; gap:24px; padding:24px; align-items:flex-start;
+  }
+  h1 { font-size:20px; margin:0 0 4px; }
+  .sub { color:var(--muted); margin:0 0 16px; max-width:42ch; }
+  .stage { display:flex; gap:20px; flex-wrap:wrap; }
+  figure { margin:0; }
+  figcaption { color:var(--muted); margin-top:8px; font-size:12px; text-align:center; }
+  canvas, .srcimg {
+    background:#000; border-radius:10px; display:block;
+    box-shadow:0 8px 30px rgba(0,0,0,.4);
+    width:450px; height:450px; image-rendering:auto;
+  }
+  .panel {
+    background:var(--panel); border-radius:14px; padding:18px 20px;
+    min-width:300px; max-width:340px;
+  }
+  label { display:block; margin:14px 0 4px; color:var(--muted); font-size:12px;
+          display:flex; justify-content:space-between; }
+  label span { color:var(--ink); font-variant-numeric:tabular-nums; }
+  input[type=range] { width:100%; accent-color:var(--accent); }
+  .row { display:flex; gap:10px; align-items:center; margin-top:14px; }
+  button {
+    background:var(--accent); color:#0b1020; border:0; border-radius:8px;
+    padding:8px 14px; font-weight:600; cursor:pointer; font-size:13px;
+  }
+  button.ghost { background:#2a3042; color:var(--ink); }
+  .chk { display:flex; gap:8px; align-items:center; margin-top:14px; color:var(--ink); }
+  .formula { margin-top:18px; padding:12px; background:#0e1017; border-radius:8px;
+             color:var(--muted); font-size:12px; }
+  .formula code { color:var(--accent); }
+  input[type=file] { font-size:12px; color:var(--muted); margin-top:6px; }
+</style>
+</head>
+<body>
+  <div>
+    <h1>Escher Warp</h1>
+    <p class="sub">
+      The conformal "Droste" map behind Escher's <em>Print Gallery</em>
+      (de&nbsp;Smit&nbsp;&amp;&nbsp;Lenstra). A straight picture that is self-similar
+      under scaling by <code>q = 256</code> becomes the famous twist via
+      <code>z&nbsp;&rarr;&nbsp;z<sup>&alpha;</sup></code>.
+    </p>
+    <div class="stage">
+      <figure>
+        <img id="src" class="srcimg" src="assets/selfsimilar.png" crossorigin="anonymous" alt="straight">
+        <figcaption>input — straight (self-similar Droste source)</figcaption>
+      </figure>
+      <figure>
+        <canvas id="out" width="450" height="450"></canvas>
+        <figcaption>output — Escher twist</figcaption>
+      </figure>
+    </div>
+  </div>
+
+  <div class="panel">
+    <label>source preset</label>
+    <select id="preset" style="width:100%;padding:6px;border-radius:8px;background:#0e1017;color:var(--ink);border:1px solid #2a3042">
+      <option value="assets/selfsimilar.png|8|0.2|20|0.3">Droste gallery corridor (q=8)</option>
+    </select>
+
+    <div class="chk" style="margin-top:16px"><input type="checkbox" id="twist" checked><label style="margin:0" for="twist">apply twist (off = plain Droste zoom)</label></div>
+
+    <label>view zoom <span id="vzoomV"></span></label>
+    <input type="range" id="vzoom" min="-2" max="3" step="0.01" value="0.9">
+
+    <label>source frame scale <span id="sscaleV"></span></label>
+    <input type="range" id="sscale" min="-2" max="2" step="0.01" value="0.6">
+
+    <label>rotation (deg) <span id="rotV"></span></label>
+    <input type="range" id="rot" min="-180" max="180" step="1" value="40">
+
+    <label>center X <span id="cxV"></span></label>
+    <input type="range" id="cx" min="-0.5" max="0.5" step="0.005" value="0">
+    <label>center Y <span id="cyV"></span></label>
+    <input type="range" id="cy" min="-0.5" max="0.5" step="0.005" value="0">
+
+    <label>q (self-similarity factor) <span id="qV"></span></label>
+    <input type="range" id="q" min="2" max="512" step="1" value="256">
+
+    <div class="row">
+      <button id="render">Render</button>
+      <button class="ghost" id="reset">Reset</button>
+      <button class="ghost" id="save">Save PNG</button>
+    </div>
+    <label style="margin-top:14px">upload your own straight image</label>
+    <input type="file" id="upload" accept="image/*">
+
+    <div class="formula" id="fx"></div>
+  </div>
+
+<script>
+const $ = id => document.getElementById(id);
+const out = $('out'), octx = out.getContext('2d');
+const N = 450;
+
+// offscreen source sampling buffer
+let srcData=null, SW=0, SH=0;
+const srcImg = $('src');
+
+function loadSource(imgEl){
+  const c = document.createElement('canvas');
+  SW = c.width = imgEl.naturalWidth;
+  SH = c.height = imgEl.naturalHeight;
+  const cx = c.getContext('2d');
+  cx.drawImage(imgEl,0,0);
+  srcData = cx.getImageData(0,0,SW,SH).data;
+  render();
+}
+
+function sampleBilinear(u,v){ // u,v in [0,1] over source
+  // wrap-clamp
+  let fx = u*(SW-1), fy=v*(SH-1);
+  if(fx<0)fx=0; if(fx>SW-1)fx=SW-1; if(fy<0)fy=0; if(fy>SH-1)fy=SH-1;
+  const x0=Math.floor(fx), y0=Math.floor(fy);
+  const x1=Math.min(x0+1,SW-1), y1=Math.min(y0+1,SH-1);
+  const tx=fx-x0, ty=fy-y0;
+  const i00=(y0*SW+x0)*4, i10=(y0*SW+x1)*4, i01=(y1*SW+x0)*4, i11=(y1*SW+x1)*4;
+  const out=[0,0,0];
+  for(let k=0;k<3;k++){
+    const a=srcData[i00+k]*(1-tx)+srcData[i10+k]*tx;
+    const b=srcData[i01+k]*(1-tx)+srcData[i11+k]*tx;
+    out[k]=a*(1-ty)+b*ty;
+  }
+  return out;
+}
+
+function render(){
+  if(!srcData) return;
+  const doTwist = $('twist').checked;
+  const vzoom = parseFloat($('vzoom').value);
+  const sscale = parseFloat($('sscale').value);
+  const rot = parseFloat($('rot').value)*Math.PI/180;
+  const cX = parseFloat($('cx').value);
+  const cY = parseFloat($('cy').value);
+  const q = parseFloat($('q').value);
+
+  // Seamless Droste exponent: alpha = 1 - i*ln(q)/(2*pi).
+  // This is the only family of exponents for which crossing the log branch cut
+  // (theta -> theta+2pi) scales the source by exactly q^k (a real self-similarity
+  // the source actually has) -> no discontinuity. It also makes the OUTPUT
+  // self-similar under scale 22.6x / rotation 157.6 deg per loop (de Smit-Lenstra).
+  const lnq = Math.log(q);
+  const twoPi = 2*Math.PI;
+  let aRe = 1;
+  let aIm = -lnq/twoPi;
+  if(!doTwist){ aRe=1; aIm=0; }
+
+  // global multiply factor m = exp(vzoom + i*rot)
+  const mMag = Math.exp(vzoom), mRe = mMag*Math.cos(rot), mIm = mMag*Math.sin(rot);
+  const srcK = Math.exp(sscale);
+
+  const img = octx.createImageData(N,N);
+  const data = img.data;
+  const half = N/2;
+  const lnQ = lnq; // for reduction band uses same q
+
+  for(let py=0; py<N; py++){
+    for(let px=0; px<N; px++){
+      // centered normalized complex z
+      let zr = (px-half)/half - cX;
+      let zi = (py-half)/half - cY;
+      // global rotate+zoom: z *= m
+      let tr = zr*mRe - zi*mIm;
+      let ti = zr*mIm + zi*mRe;
+      zr=tr; zi=ti;
+
+      const r = Math.hypot(zr,zi);
+      let R,I;
+      if(r===0){ R=0; I=0; }
+      else {
+        // log z
+        const lr = Math.log(r);
+        const th = Math.atan2(zi,zr);
+        // w = alpha * (lr + i th)
+        const wr = aRe*lr - aIm*th;
+        const wi = aIm*lr + aRe*th;
+        // exp(w)
+        const em = Math.exp(wr);
+        R = em*Math.cos(wi);
+        I = em*Math.sin(wi);
+      }
+      // source-space coords scaled
+      let sr = R*srcK, si = I*srcK;
+      // reduce by q-self-similarity using L-inf so the square tiles
+      let m = Math.max(Math.abs(sr),Math.abs(si));
+      if(m>0){
+        // bring m into [1/q, 1)
+        while(m>=1){ sr/=q; si/=q; m/=q; }
+        while(m<1/q){ sr*=q; si*=q; m*=q; }
+      }
+      // map [-1,1] -> [0,1]
+      const u=(sr+1)/2, v=(si+1)/2;
+      const col=sampleBilinear(u,v);
+      const o=(py*N+px)*4;
+      data[o]=col[0]; data[o+1]=col[1]; data[o+2]=col[2]; data[o+3]=255;
+    }
+  }
+  octx.putImageData(img,0,0);
+  updateLabels(aRe,aIm,q);
+}
+
+function updateLabels(aRe,aIm,q){
+  $('vzoomV').textContent = (+$('vzoom').value).toFixed(2);
+  $('sscaleV').textContent = (+$('sscale').value).toFixed(2);
+  $('rotV').textContent = $('rot').value+'°';
+  $('cxV').textContent = (+$('cx').value).toFixed(3);
+  $('cyV').textContent = (+$('cy').value).toFixed(3);
+  $('qV').textContent = q;
+  $('fx').innerHTML =
+    '&alpha; = 1 &minus; i&middot;ln '+q+' / 2&pi;<br>'+
+    '&nbsp;&nbsp;= <code>'+aRe.toFixed(4)+' '+(aIm<0?'&minus; ':'+ ')+Math.abs(aIm).toFixed(4)+'i</code><br>'+
+    'output(z) = input(z<sup>&alpha;</sup>), reduced mod &times;'+q+'.<br>'+
+    'seamless: e<sup>2&pi;i&alpha;</sup> = '+q+'.';
+}
+
+['vzoom','sscale','rot','cx','cy','q'].forEach(id=>$(id).addEventListener('input',render));
+$('twist').addEventListener('change',render);
+$('render').addEventListener('click',render);
+$('reset').addEventListener('click',()=>{ $('twist').checked=true; applyPreset(); });
+$('save').addEventListener('click',()=>{
+  const a=document.createElement('a');
+  a.download='escher-warp.png'; a.href=out.toDataURL('image/png'); a.click();
+});
+function applyPreset(){
+  const [path,qv,vz,rt,ss]=$('preset').value.split('|');
+  $('q').value=qv; $('vzoom').value=vz; $('rot').value=rt; $('sscale').value=ss;
+  $('cx').value=0; $('cy').value=0;
+  const im=new Image(); im.crossOrigin='anonymous';
+  im.onload=()=>{ srcImg.src=path; loadSource(im); };
+  im.src=path;
+}
+$('preset').addEventListener('change',applyPreset);
+$('upload').addEventListener('change',e=>{
+  const f=e.target.files[0]; if(!f) return;
+  const url=URL.createObjectURL(f);
+  const im=new Image();
+  im.onload=()=>{ loadSource(im); URL.revokeObjectURL(url); };
+  im.src=url;
+});
+
+// optional URL overrides for quick tuning: ?vzoom=..&sscale=..&rot=..&cx=..&cy=..&q=..&twist=0
+(function(){
+  const p=new URLSearchParams(location.search);
+  ['vzoom','sscale','rot','cx','cy','q'].forEach(k=>{ if(p.has(k)) $(k).value=p.get(k); });
+  if(p.has('twist')) $('twist').checked = p.get('twist')!=='0';
+  if(p.has('preset')) $('preset').selectedIndex = +p.get('preset')||0;
+})();
+
+(function init(){
+  const p=new URLSearchParams(location.search);
+  const [path,qv,vz,rt,ss]=$('preset').value.split('|');
+  // preset defaults, unless explicitly overridden in the URL
+  if(!p.has('q')) $('q').value=qv;
+  if(!p.has('vzoom')) $('vzoom').value=vz;
+  if(!p.has('rot')) $('rot').value=rt;
+  if(!p.has('sscale')) $('sscale').value=ss;
+  srcImg.src=path;
+  if(srcImg.complete && srcImg.naturalWidth) loadSource(srcImg);
+  else srcImg.onload=()=>loadSource(srcImg);
+})();
+</script>
+</body>
+</html>
