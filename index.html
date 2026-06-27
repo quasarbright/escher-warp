@@ -41,35 +41,10 @@
   button.ghost { background:#2a3042; color:var(--ink); }
   button.ghost.active { background:var(--accent); color:#0b1020; box-shadow:0 0 0 2px rgba(122,162,247,.4); }
   .chk { display:flex; gap:8px; align-items:center; margin-top:14px; color:var(--ink); }
-  .formula { margin-top:18px; padding:12px; background:#0e1017; border-radius:8px;
-             color:var(--muted); font-size:12px; }
-  .formula code { color:var(--accent); }
   input[type=file] { font-size:12px; color:var(--muted); margin-top:6px; }
   select { width:100%;padding:6px;border-radius:8px;background:#0e1017;color:var(--ink);border:1px solid #2a3042; }
-  .linkbtn { background:none; color:var(--accent); padding:0; font-weight:600;
-             text-decoration:underline; font-size:inherit; }
-  /* modal */
-  .backdrop { position:fixed; inset:0; background:rgba(6,8,14,.72); display:none;
-              z-index:50; padding:5vh 16px; overflow:auto; }
-  .backdrop.open { display:block; }
-  .modal { max-width:760px; margin:0 auto; background:var(--panel);
-           border:1px solid #2a3042; border-radius:16px; padding:28px 34px 40px;
-           box-shadow:0 20px 60px rgba(0,0,0,.5); }
-  .modal h2 { margin:0 0 4px; font-size:22px; }
-  .modal h3 { margin:26px 0 6px; font-size:15px; color:var(--accent); }
-  .modal p, .modal li { color:#cfd3df; font-size:14.5px; line-height:1.6; }
-  .modal a { color:var(--accent); }
-  .modal .close { position:sticky; top:0; float:right; margin:-8px -10px 0 0; }
-  .modal canvas { display:block; margin:14px auto; background:#0e1017;
-                  border-radius:10px; max-width:100%; }
-  .modal .cap { text-align:center; color:var(--muted); font-size:12px; margin-top:-6px; }
-  mjx-container { color:#eef0f6; }
+  .sub a { color:var(--accent); }
 </style>
-<script>
-  window.MathJax = { tex: { inlineMath: [['\\(','\\)']], displayMath: [['$$','$$']] },
-                     options: { skipHtmlTags: ['script','noscript','style','textarea','pre'] } };
-</script>
-<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" async></script>
 </head>
 <body>
   <div>
@@ -79,8 +54,8 @@
       spiral from Escher's <em>Print Gallery</em>. On the left, drag the blue
       rectangle onto the shrunk copy inside the picture; the right side shows the
       twist. Use the controls to zoom, animate, and toggle the twist — or upload
-      your own self-similar image.
-      <button class="linkbtn" id="aboutBtn">About the math →</button>
+      your own self-similar image. Based on 3Blue1Brown's video
+      <a href="https://www.youtube.com/watch?v=ldxFjLJ3rVY" target="_blank" rel="noopener">“How (and why) to take a logarithm of an image.”</a>
     </p>
     <div class="stage">
       <figure>
@@ -118,85 +93,8 @@
     <label style="margin-top:14px;display:block">upload your own straight (self-similar) image</label>
     <input type="file" id="upload" accept="image/*">
 
-    <div class="formula" id="fx"></div>
   </div>
 
-  <!-- ABOUT MODAL -->
-  <div class="backdrop" id="aboutBack">
-    <div class="modal" id="aboutModal">
-      <button class="ghost close" id="aboutClose">✕ Close</button>
-      <h2>The mathematics of the warp</h2>
-      <p>This is the conformal “Droste” map that completes M.&nbsp;C.&nbsp;Escher's
-        lithograph <em>Print Gallery</em>, analysed by Bart de&nbsp;Smit and
-        Hendrik Lenstra and beautifully explained in 3Blue1Brown's video
-        <a href="https://www.youtube.com/watch?v=ldxFjLJ3rVY" target="_blank" rel="noopener">“How (and why) to take a logarithm of an image.”</a></p>
-
-      <h3>1. A picture inside itself</h3>
-      <p>Put the picture on the complex plane \(\mathbb{C}\), centered at the
-        origin. It is <em>self-similar</em>: shrinking it by a factor \(q>1\)
-        about the center reproduces it exactly,
-        $$f(qz) = f(z).$$
-        For Escher's gallery \(q = 256\). Here \(q\) is set by the size of the blue
-        rectangle: \(q = (\text{image size})/(\text{rectangle size})\).</p>
-
-      <h3>2. Take the logarithm of the image</h3>
-      <p>Substitute \(w = \log z = \ln|z| + i\,\arg z\). Two things become simple:</p>
-      <ul>
-        <li>scaling \(z\) by \(q\) just <em>adds</em> \(\ln q\) to \(\operatorname{Re}w\) (a horizontal shift);</li>
-        <li>going once around the center (\(\arg\) increases by \(2\pi\)) adds \(2\pi\) to \(\operatorname{Im}w\) (a vertical shift).</li>
-      </ul>
-      <p>So in \(w\)-coordinates the picture is a <em>wallpaper</em> — doubly periodic on the lattice
-        $$\Lambda = \{\, m\ln q + 2\pi i\,n \;:\; m,n \in \mathbb{Z}\,\}.$$</p>
-      <canvas id="diag" width="680" height="260"></canvas>
-      <p class="cap">Left: scaling about the center. Right: after \(w=\log z\), that
-        becomes a periodic tiling; the twist (filled dots) <em>shears</em> the lattice.</p>
-
-      <h3>3. The twist</h3>
-      <p>Escher's picture is self-similar along a <em>slanted</em> direction:
-        going around once, it has also zoomed in. We realise this as a complex power,
-        $$\text{output}(z) = \text{input}\!\left(z^{\alpha}\right),\qquad
-          z^{\alpha} = e^{\alpha \log z}.$$
-        In \(w\)-space that is multiplication by \(\alpha\) — a rotate-and-scale that
-        shears the rectangular lattice into the slanted one above.</p>
-      <p>For the result to be <strong>seamless</strong>, crossing the branch cut of
-        the logarithm (where \(\arg\) jumps by \(2\pi\)) must land on a genuine
-        symmetry of the source — a real power of \(q\):
-        $$e^{2\pi i\,\alpha} = q^{k}.$$
-        Requiring the imaginary part to vanish and the magnitude to be \(q\) gives the
-        exponent this app uses:
-        $$\boxed{\;\alpha = 1 - i\,\dfrac{\ln q}{2\pi}\;}$$</p>
-
-      <h3>4. What one loop does</h3>
-      <p>The twisted output is itself self-similar — multiplying the output coordinate by
-        $$S = q^{1/\alpha}$$
-        reproduces the image. \(S\) is a simultaneous scale and rotation. For \(q=256\),
-        \(|S|\approx 22.6\) and \(\arg S \approx 157.6^\circ\): exactly the “copy of
-        itself, shrunk \(22.6\times\) and rotated \(157.6^\circ\)” that de&nbsp;Smit &amp;
-        Lenstra describe. It is also why the zoom animation loops perfectly — advancing
-        the zoom by one unit of \(S\) returns to the same image.</p>
-
-      <h3>5. Off-center recursion</h3>
-      <p>The shrunk copy need not be centered. A rectangle of relative size \(a\)
-        centered at \(C\) fixes both the factor and the spiral's eye (the one point the
-        scaling leaves still):
-        $$q = \frac1a,\qquad F = \frac{C}{1-a}.$$
-        The renderer simply works in coordinates centered at \(F\).</p>
-
-      <h3>6. How it is drawn</h3>
-      <p>For each output pixel we run the map backwards: form \(z^{\alpha}\), then
-        <em>fold</em> by scaling about \(F\) by a power of \(q\) until the point lands in
-        one fundamental ring — in closed form \(k = \lfloor \log_q g\rfloor + 1\), where
-        \(g\) is the (off-center) \(L^\infty\) distance. The whole map runs in a WebGL
-        fragment shader, with \(3\times3\) supersampling for anti-aliasing (ordinary
-        mipmaps would seam at the fold).</p>
-
-      <p style="margin-top:24px">Further reading:
-        <a href="https://www.youtube.com/watch?v=ldxFjLJ3rVY" target="_blank" rel="noopener">3Blue1Brown — logarithm of an image</a> ·
-        <a href="https://pub.math.leidenuniv.nl/~smitbde/papers/bridges-2005-desmit.pdf" target="_blank" rel="noopener">de&nbsp;Smit &amp; Lenstra (Bridges 2005)</a> ·
-        <a href="https://en.wikipedia.org/wiki/Print_Gallery_(M._C._Escher)" target="_blank" rel="noopener">Print Gallery (Wikipedia)</a>
-      </p>
-    </div>
-  </div>
 
 <script>
 const $ = id => document.getElementById(id);
@@ -316,14 +214,9 @@ function render(){
   updateLabels(aRe,aIm,q,Fx,Fy);
 }
 
-function updateLabels(aRe,aIm,q,Fx,Fy){
+function updateLabels(){
   $('vzoomV').textContent = (+$('vzoom').value).toFixed(2);
   $('speedV').textContent = (+$('speed').value).toFixed(2)+'×';
-  $('fx').innerHTML =
-    'q = image / copy = <code>'+q.toFixed(2)+'</code><br>'+
-    'fixed point F = <code>('+Fx.toFixed(2)+', '+Fy.toFixed(2)+')</code><br>'+
-    '&alpha; = 1 &minus; i&middot;ln q/2&pi; = <code>'+aRe.toFixed(3)+' '+(aIm<0?'&minus;':'+')+' '+Math.abs(aIm).toFixed(3)+'i</code><br>'+
-    'seamless: e<sup>2&pi;i&alpha;</sup> = q.';
 }
 
 // ---- overlay: draw the rectangle + corner handles ----
@@ -489,60 +382,6 @@ $('upload').addEventListener('change',e=>{
   loadImage(URL.createObjectURL(f), 8);   // url kept alive so the <img> keeps showing it
 });
 
-// ---- About modal ----
-function arrow(g,x0,y0,x1,y1,col){
-  g.strokeStyle=col; g.fillStyle=col; g.lineWidth=2;
-  g.beginPath(); g.moveTo(x0,y0); g.lineTo(x1,y1); g.stroke();
-  const an=Math.atan2(y1-y0,x1-x0), h=7;
-  g.beginPath(); g.moveTo(x1,y1);
-  g.lineTo(x1-h*Math.cos(an-0.4), y1-h*Math.sin(an-0.4));
-  g.lineTo(x1-h*Math.cos(an+0.4), y1-h*Math.sin(an+0.4));
-  g.closePath(); g.fill();
-}
-function drawDiagram(){
-  const c=$('diag'); if(!c) return; const g=c.getContext('2d');
-  g.clearRect(0,0,c.width,c.height); g.font='12px system-ui,sans-serif'; g.textAlign='center';
-  // LEFT: nested self-similar squares
-  const cx=150, cy=118; g.lineWidth=1.5; g.strokeStyle='#7aa2f7';
-  let s=110; for(let i=0;i<5;i++){ g.strokeRect(cx-s,cy-s,2*s,2*s); s*=0.62; }
-  g.fillStyle='#f7b97a'; g.beginPath(); g.arc(cx,cy,3,0,7); g.fill();
-  g.fillStyle='#9aa0b0'; g.fillText('a picture inside itself (scale by q)', cx, 248);
-  g.strokeStyle='#2a3042'; g.lineWidth=1; g.beginPath(); g.moveTo(320,18); g.lineTo(320,242); g.stroke();
-  // RIGHT: w = log z plane
-  const ox=395, oy=170, sx=30, sy=11, lnq=Math.log(8), tp=2*Math.PI;
-  g.strokeStyle='#3a4256'; g.lineWidth=1;
-  g.beginPath(); g.moveTo(360,oy); g.lineTo(675,oy); g.stroke();
-  g.beginPath(); g.moveTo(ox,236); g.lineTo(ox,24); g.stroke();
-  const P=(re,im)=>[ox+re*sx, oy-im*sy];
-  for(let m=0;m<=4;m++) for(let n=-1;n<=2;n++){            // straight lattice (open)
-    const [x,y]=P(m*lnq,n*tp); if(x<360||x>674||y<24||y>236) continue;
-    g.strokeStyle='#56607a'; g.lineWidth=1.2; g.beginPath(); g.arc(x,y,3,0,7); g.stroke();
-  }
-  g.fillStyle='#7aa2f7';
-  for(let m=0;m<=4;m++) for(let n=-1;n<=2;n++){            // twisted lattice (filled)
-    const [x,y]=P((m+n)*lnq,n*tp); if(x<360||x>674||y<24||y>236) continue;
-    g.beginPath(); g.arc(x,y,3.2,0,7); g.fill();
-  }
-  let a; a=P(0,0);
-  arrow(g,a[0],a[1],...P(1*lnq,0),'#8a93a8');             // zoom period
-  arrow(g,a[0],a[1],...P(1*lnq,1*tp),'#f7b97a');          // one loop = around + zoom
-  g.fillStyle='#9aa0b0'; g.textAlign='left';
-  g.fillText('Re w = ln r  (zoom) →', 470, oy+18);
-  g.save(); g.translate(ox-14,150); g.rotate(-Math.PI/2); g.fillText('Im w = θ (one loop = 2π)',0,0); g.restore();
-  g.fillStyle='#f7b97a'; g.fillText('loop + zoom', P(1*lnq,1*tp)[0]+6, P(1*lnq,1*tp)[1]-4);
-}
-let aboutDone=false;
-function openAbout(){
-  $('aboutBack').classList.add('open'); drawDiagram();
-  if(!aboutDone && window.MathJax && MathJax.typesetPromise)
-    MathJax.typesetPromise([$('aboutModal')]).then(()=>{aboutDone=true;});
-}
-function closeAbout(){ $('aboutBack').classList.remove('open'); }
-$('aboutBtn').addEventListener('click',openAbout);
-$('aboutClose').addEventListener('click',closeAbout);
-$('aboutBack').addEventListener('click',e=>{ if(e.target===$('aboutBack')) closeAbout(); });
-document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeAbout(); });
-
 // init — the bundled starter image (corridor) is self-similar by q=8, centered
 const STARTER='assets/selfsimilar.png', STARTER_Q=8;
 (function init(){
@@ -550,7 +389,6 @@ const STARTER='assets/selfsimilar.png', STARTER_Q=8;
   $('vzoom').value = p.get('vzoom') ?? 0;
   if(p.has('twist')) $('twist').checked = p.get('twist')!=='0';
   if(p.get('center')==='1') $('centerout').checked = true;
-  if(p.get('about')==='1') openAbout();
   a = 1/parseFloat(p.get('q') ?? STARTER_Q);
   RCx = parseFloat(p.get('rcx') ?? 0); RCy = parseFloat(p.get('rcy') ?? 0);
   srcImg.src=STARTER;
