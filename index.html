@@ -76,8 +76,8 @@
   <div class="panel">
     <div class="chk"><input type="checkbox" id="twist" checked><label style="margin:0" for="twist">apply twist (off = plain Droste zoom)</label></div>
 
-    <label>view zoom / recursion phase <span id="vzoomV"></span></label>
-    <input type="range" id="vzoom" min="-3" max="3" step="0.01" value="0">
+    <label>view zoom (full loop end-to-end) <span id="vzoomV"></span></label>
+    <input type="range" id="vzoom" min="0" max="1" step="0.005" value="0">
 
     <div class="row">
       <button id="zin">⊕ Zoom in</button>
@@ -99,6 +99,9 @@ const $ = id => document.getElementById(id);
 const out = $('out'), octx = out.getContext('2d');
 const ov = $('ov'), ovx = ov.getContext('2d');
 const N = 450;
+// slider bounds are constant; the slider spans exactly one seamless loop, so its
+// two ends always look identical no matter how q changes from square edits.
+const VMIN = +$('vzoom').min, VMAX = +$('vzoom').max;
 
 // ---- source buffer ----
 let srcData=null, SW=0, SH=0;
@@ -162,13 +165,15 @@ function render(){
   let aRe = 1, aIm = -lnq/twoPi;
   if(!doTwist){ aRe=1; aIm=0; }
 
-  // Output-plane multiply m = e^vzoom (manual radial framing) times the seamless
-  // zoom flow exp(phase * lnq/alpha). lnq/alpha scales AND rotates so that one
-  // unit of phase reproduces the image exactly (the output self-similarity S).
+  // Output-plane multiply m = exp(t * lnq/alpha), the output self-similarity flow:
+  // lnq/alpha scales AND rotates so that t -> t+1 reproduces the image exactly.
+  // t = (slider mapped to 0..1) + animation phase, so both slider ends match and
+  // the loop length auto-adjusts to q (square edits) while slider bounds stay 0..1.
   const b = lnq/twoPi, denom = 1 + b*b;        // alpha = 1 - i*b
   const flowRe = aIm===0 ? lnq : lnq/denom;    // Re(lnq/alpha)  (lnq if no twist)
   const flowIm = aIm===0 ? 0   : lnq*b/denom;  // Im(lnq/alpha)
-  const lmRe = vzoom + phase*flowRe, lmIm = phase*flowIm;
+  const t = (vzoom - VMIN)/(VMAX - VMIN) + phase;
+  const lmRe = t*flowRe, lmIm = t*flowIm;
   const mMag = Math.exp(lmRe), mRe=mMag*Math.cos(lmIm), mIm=mMag*Math.sin(lmIm);
   const srcK = 1;
   const invq = 1/q;
