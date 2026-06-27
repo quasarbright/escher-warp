@@ -74,12 +74,7 @@
   </div>
 
   <div class="panel">
-    <label style="display:block">source preset</label>
-    <select id="preset">
-      <option value="assets/selfsimilar.png|8|0">Droste gallery corridor (q=8)</option>
-    </select>
-
-    <div class="chk" style="margin-top:16px"><input type="checkbox" id="twist" checked><label style="margin:0" for="twist">apply twist (off = plain Droste zoom)</label></div>
+    <div class="chk"><input type="checkbox" id="twist" checked><label style="margin:0" for="twist">apply twist (off = plain Droste zoom)</label></div>
 
     <label>view zoom / recursion phase <span id="vzoomV"></span></label>
     <input type="range" id="vzoom" min="-3" max="3" step="0.01" value="0">
@@ -340,32 +335,28 @@ function resetParams(){
 }
 $('reset').addEventListener('click',resetParams);
 
-// Load a new source image (preset or upload), then reset params for it.
+// Load a new source image (upload), then reset params for it.
 function loadImage(path, q){
   const im=new Image(); im.crossOrigin='anonymous';
   im.onload=()=>{ a=1/(q||8); RCx=0; RCy=0; $('twist').checked=true;
                   srcImg.src=path; loadSource(im); };
   im.src=path;
 }
-$('preset').addEventListener('change',()=>{
-  const [path,qv,vz]=$('preset').value.split('|');
-  $('vzoom').value=vz; loadImage(path, parseFloat(qv));
-});
 $('upload').addEventListener('change',e=>{
   const f=e.target.files[0]; if(!f) return;
   $('vzoom').value=0;
   loadImage(URL.createObjectURL(f), 8);   // url kept alive so the <img> keeps showing it
 });
 
-// init
+// init — the bundled starter image (corridor) is self-similar by q=8, centered
+const STARTER='assets/selfsimilar.png', STARTER_Q=8;
 (function init(){
   const p=new URLSearchParams(location.search);
-  const [path,qv,vz]=$('preset').value.split('|');
-  $('vzoom').value = p.get('vzoom') ?? vz;
+  $('vzoom').value = p.get('vzoom') ?? 0;
   if(p.has('twist')) $('twist').checked = p.get('twist')!=='0';
-  a = 1/parseFloat(p.get('q') ?? qv);
+  a = 1/parseFloat(p.get('q') ?? STARTER_Q);
   RCx = parseFloat(p.get('rcx') ?? 0); RCy = parseFloat(p.get('rcy') ?? 0);
-  srcImg.src=path;
+  srcImg.src=STARTER;
   if(srcImg.complete && srcImg.naturalWidth) loadSource(srcImg);
   else srcImg.onload=()=>loadSource(srcImg);
 })();
