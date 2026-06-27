@@ -75,9 +75,13 @@
 
   <div class="panel">
     <div class="chk"><input type="checkbox" id="twist" checked><label style="margin:0" for="twist">apply twist (off = plain Droste zoom)</label></div>
+    <div class="chk"><input type="checkbox" id="centerout"><label style="margin:0" for="centerout">center the output spiral</label></div>
 
     <label>view zoom (full loop end-to-end) <span id="vzoomV"></span></label>
     <input type="range" id="vzoom" min="0" max="1" step="0.005" value="0">
+
+    <label>zoom speed <span id="speedV"></span></label>
+    <input type="range" id="speed" min="0.02" max="1" step="0.01" value="0.16">
 
     <div class="row">
       <button id="zin">⊕ Zoom in</button>
@@ -136,7 +140,6 @@ function sampleBilinear(u,v){ // u,v in [0,1]
 // rect = the shrunk copy of the whole image: half-size `a` (square in normalized
 // coords because it is locked to the source aspect ratio), centered at (RCx,RCy).
 let RCx=0, RCy=0, a=1/8;
-let phase=0;   // animation phase along the seamless zoom flow; period 1
 
 function rectParams(){
   const q = 1/a;                       // image / copy size ratio
@@ -167,16 +170,21 @@ function render(){
 
   // Output-plane multiply m = exp(t * lnq/alpha), the output self-similarity flow:
   // lnq/alpha scales AND rotates so that t -> t+1 reproduces the image exactly.
-  // t = (slider mapped to 0..1) + animation phase, so both slider ends match and
-  // the loop length auto-adjusts to q (square edits) while slider bounds stay 0..1.
+  // t = slider mapped to 0..1, so both slider ends match and the loop length
+  // auto-adjusts to q (square edits) while slider bounds stay 0..1.
   const b = lnq/twoPi, denom = 1 + b*b;        // alpha = 1 - i*b
   const flowRe = aIm===0 ? lnq : lnq/denom;    // Re(lnq/alpha)  (lnq if no twist)
   const flowIm = aIm===0 ? 0   : lnq*b/denom;  // Im(lnq/alpha)
-  const t = (vzoom - VMIN)/(VMAX - VMIN) + phase;
+  const t = (vzoom - VMIN)/(VMAX - VMIN);
   const lmRe = t*flowRe, lmIm = t*flowIm;
   const mMag = Math.exp(lmRe), mRe=mMag*Math.cos(lmIm), mIm=mMag*Math.sin(lmIm);
   const srcK = 1;
   const invq = 1/q;
+
+  // output spiral center O: at F (off) or canvas center (on). Source still folds
+  // about F, so the recursion stays correct -- this just reframes the output.
+  const Ox = $('centerout').checked ? 0 : Fx;
+  const Oy = $('centerout').checked ? 0 : Fy;
 
   const img = octx.createImageData(M,M);
   const data = img.data;
@@ -184,10 +192,10 @@ function render(){
 
   for(let py=0; py<M; py++){
     for(let px=0; px<M; px++){
-      // output normalized coord, spiral centered on the fixed point F
-      let zr = (px-half)/half - Fx;
-      let zi = (py-half)/half - Fy;
-      // view zoom + rotation about F
+      // output normalized coord, spiral centered on O
+      let zr = (px-half)/half - Ox;
+      let zi = (py-half)/half - Oy;
+      // apply the zoom flow (scale + rotation)
       let tr = zr*mRe - zi*mIm, ti = zr*mIm + zi*mRe;
       zr=tr; zi=ti;
 
@@ -220,6 +228,7 @@ function render(){
 
 function updateLabels(aRe,aIm,q,Fx,Fy){
   $('vzoomV').textContent = (+$('vzoom').value).toFixed(2);
+  $('speedV').textContent = (+$('speed').value).toFixed(2)+'×';
   $('fx').innerHTML =
     'q = image / copy = <code>'+q.toFixed(2)+'</code><br>'+
     'fixed point F = <code>('+Fx.toFixed(2)+', '+Fy.toFixed(2)+')</code><br>'+
@@ -331,19 +340,23 @@ ov.addEventListener('pointercancel',endDrag);
 let raf=0;
 function scheduleRender(q){ if(raf) return; raf=requestAnimationFrame(()=>{raf=0; render(q);}); }
 
-$('vzoom').addEventListener('input',()=>render(1));   // manual framing, independent of the spin
-$('twist').addEventListener('change',()=>render(1));
+$('vzoom').addEventListener('input',()=>render());    // manual framing (can adjust mid-spin)
+$('twist').addEventListener('change',()=>render());
+$('centerout').addEventListener('change',()=>render());
+$('speed').addEventListener('input',()=>{ $('speedV').textContent=(+$('speed').value).toFixed(2)+'×'; });
 
-// ---- seamless infinite zoom: advance `phase` along the output self-similarity ----
-// Period in phase is exactly 1 (phase += 1 reproduces the image), so we wrap mod 1
-// and the zoom never stops and never drifts. Independent of the manual slider.
+// ---- seamless infinite zoom: sweep the slider; it spans exactly one loop, so
+// wrapping its value mod its range gives endless drift-free zoom. ----
 let anim=null;                       // {dir:+1|-1, last}
-const SPEED=0.16;                    // loops per second
+const R=VMAX-VMIN;
 function animFrame(now){
   if(!anim) return;
   const dt=Math.min(0.1,(now-anim.last)/1000); anim.last=now;
-  phase=(phase + anim.dir*SPEED*dt) % 1; if(phase<0) phase+=1;
-  render(1);
+  const sp=parseFloat($('speed').value);          // loops per second
+  let v=parseFloat($('vzoom').value)+anim.dir*sp*R*dt;
+  v=((v-VMIN)%R + R)%R + VMIN;                     // wrap within [VMIN,VMAX)
+  $('vzoom').value=v;
+  render();
   anim.raf=requestAnimationFrame(animFrame);
 }
 function startAnim(dir){
@@ -362,7 +375,7 @@ $('save').addEventListener('click',()=>{
 // Reset only the parameters (rectangle + sliders) — keep the current image.
 function resetParams(){
   stopAnim();
-  a=1/8; RCx=0; RCy=0; phase=0; $('vzoom').value=0; $('twist').checked=true;
+  a=1/8; RCx=0; RCy=0; $('vzoom').value=0; $('twist').checked=true;
   drawOverlay(); render(1);
 }
 $('reset').addEventListener('click',resetParams);
@@ -376,7 +389,7 @@ function loadImage(path, q){
 }
 $('upload').addEventListener('change',e=>{
   const f=e.target.files[0]; if(!f) return;
-  stopAnim(); phase=0; $('vzoom').value=0;
+  stopAnim(); $('vzoom').value=0;
   loadImage(URL.createObjectURL(f), 8);   // url kept alive so the <img> keeps showing it
 });
 
@@ -386,6 +399,7 @@ const STARTER='assets/selfsimilar.png', STARTER_Q=8;
   const p=new URLSearchParams(location.search);
   $('vzoom').value = p.get('vzoom') ?? 0;
   if(p.has('twist')) $('twist').checked = p.get('twist')!=='0';
+  if(p.get('center')==='1') $('centerout').checked = true;
   a = 1/parseFloat(p.get('q') ?? STARTER_Q);
   RCx = parseFloat(p.get('rcx') ?? 0); RCy = parseFloat(p.get('rcy') ?? 0);
   srcImg.src=STARTER;
