@@ -52,20 +52,31 @@ seam_u = (((u) % (1/3)) < 0.02)
 img[floor & (tile_s | seam_u)] = 0.95
 img[ceil  & (tile_s | seam_u)] = 0.15
 
-# ---- framed pictures on the side walls ----
-def wall_pictures(mask):
+# ---- framed pictures on the side walls, each with a big "L" / "R" letter ----
+def letter_mask(L, X, Y):                 # X right, Y up; strokes ~0.4 thick
+    vbar = (X > -0.55) & (X < -0.15) & (Y > -0.9) & (Y < 0.9)
+    if L == 'L':
+        hbar = (Y > -0.9) & (Y < -0.5) & (X > -0.55) & (X < 0.55)
+        return vbar | hbar
+    top = (Y > 0.5) & (Y < 0.9) & (X > -0.55) & (X < 0.4)         # R: bowl top
+    rsd = (X > 0.1) & (X < 0.5) & (Y > 0.05) & (Y < 0.9)          #    bowl side
+    mid = (Y > 0.05) & (Y < 0.45) & (X > -0.55) & (X < 0.5)       #    bowl bottom
+    leg = (np.abs((Y - 0.05) + 1.4 * (X + 0.15)) < 0.32) \
+          & (X > -0.2) & (X < 0.6) & (Y > -0.9) & (Y < 0.1)       #    diagonal leg
+    return vbar | top | rsd | mid | leg
+
+def wall_pictures(mask, L, xdir):
     inb = mask & (np.abs(s) < 0.62) & (u > 0.22) & (u < 0.82)
     frame = inb & ((np.abs(s) > 0.55) | (u < 0.30) | (u > 0.74))
     mat   = inb & ~frame
     img[mat] = 0.93
     img[frame] = 0.08
-    # a simple silhouette inside the mat (a filled circle "artwork")
-    cs = s / 0.5
-    cu = (u - 0.52) / 0.22
-    art = mat & ((cs*cs + cu*cu) < 0.45)
-    img[art] = 0.12
-wall_pictures(left)
-wall_pictures(right)
+    # letter coords: depth (u) is the picture's horizontal, screen (s) its vertical
+    LX = xdir * (u - 0.52) / 0.22
+    LY = -s / 0.5
+    img[mat & letter_mask(L, LX, LY)] = 0.12
+wall_pictures(left,  'L', -1)
+wall_pictures(right, 'R', +1)
 
 # ---- nested archway: a thick dark frame at each segment boundary ----
 arch = (u < 0.06) | (u > 0.965)
@@ -73,6 +84,12 @@ img[arch] = 0.05
 # a lighter inner lip just inside the arch for a 3-D molding feel
 lip = ((u >= 0.06) & (u < 0.10)) | ((u <= 0.965) & (u > 0.93))
 img[lip] = 0.70
+
+# ---- the recursion center is left BLANK on purpose ----
+# Everything inside the self-similarity rectangle (rho < 1/q) is never sampled by
+# the renderer: it folds the outer ring inward to synthesize the recursion. So we
+# just paint it black here to show the source does NOT need to be pre-drosted.
+img[rho < 1.0 / q] = 0.04
 
 g = np.clip(img, 0, 1)
 rgb = (np.dstack([g, g, g]) * 255).astype(np.uint8)
