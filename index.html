@@ -80,7 +80,8 @@
     <input type="range" id="vzoom" min="-3" max="3" step="0.01" value="0">
 
     <div class="row">
-      <button id="reset">Reset rectangle</button>
+      <button id="anim">▶ Animate zoom</button>
+      <button class="ghost" id="reset">Reset rectangle</button>
       <button class="ghost" id="save">Save PNG</button>
     </div>
     <label style="margin-top:14px;display:block">upload your own straight (self-similar) image</label>
@@ -321,8 +322,39 @@ ov.addEventListener('pointercancel',endDrag);
 let raf=0;
 function scheduleRender(q){ if(raf) return; raf=requestAnimationFrame(()=>{raf=0; render(q);}); }
 
-$('vzoom').addEventListener('input',()=>render(1));
+$('vzoom').addEventListener('input',()=>{ stopAnim(); render(1); });
 $('twist').addEventListener('change',()=>render(1));
+
+// ---- zoom animation: in -> pause -> out -> pause, looping ----
+let anim=null;
+const VMIN=-3, VMAX=3, T_IN=4200, T_OUT=4200, T_PAUSE=900;
+const CYCLE=T_IN+T_PAUSE+T_OUT+T_PAUSE;
+const smooth=t=>t*t*(3-2*t);
+function animFrame(now){
+  if(!anim) return;
+  const t=(now-anim.t0)%CYCLE;
+  let v;
+  if(t<T_IN)                       v=VMIN+(VMAX-VMIN)*smooth(t/T_IN);
+  else if(t<T_IN+T_PAUSE)          v=VMAX;
+  else if(t<T_IN+T_PAUSE+T_OUT)    v=VMAX-(VMAX-VMIN)*smooth((t-T_IN-T_PAUSE)/T_OUT);
+  else                             v=VMIN;
+  $('vzoom').value=v;
+  render(0);                       // draft res while animating
+  anim.raf=requestAnimationFrame(animFrame);
+}
+function startAnim(){
+  if(anim) return;
+  anim={t0:performance.now(), raf:0};
+  anim.raf=requestAnimationFrame(animFrame);
+  $('anim').textContent='⏸ Stop';
+}
+function stopAnim(){
+  if(!anim) return;
+  cancelAnimationFrame(anim.raf); anim=null;
+  $('anim').textContent='▶ Animate zoom';
+  render(1);                       // settle at full res
+}
+$('anim').addEventListener('click',()=>{ anim?stopAnim():startAnim(); });
 $('save').addEventListener('click',()=>{
   const A=document.createElement('a');
   A.download='escher-warp.png'; A.href=out.toDataURL('image/png'); A.click();
@@ -330,6 +362,7 @@ $('save').addEventListener('click',()=>{
 
 // Reset only the parameters (rectangle + sliders) — keep the current image.
 function resetParams(){
+  stopAnim();
   a=1/8; RCx=0; RCy=0; $('vzoom').value=0; $('twist').checked=true;
   drawOverlay(); render(1);
 }
@@ -344,7 +377,7 @@ function loadImage(path, q){
 }
 $('upload').addEventListener('change',e=>{
   const f=e.target.files[0]; if(!f) return;
-  $('vzoom').value=0;
+  stopAnim(); $('vzoom').value=0;
   loadImage(URL.createObjectURL(f), 8);   // url kept alive so the <img> keeps showing it
 });
 
@@ -357,8 +390,9 @@ const STARTER='assets/selfsimilar.png', STARTER_Q=8;
   a = 1/parseFloat(p.get('q') ?? STARTER_Q);
   RCx = parseFloat(p.get('rcx') ?? 0); RCy = parseFloat(p.get('rcy') ?? 0);
   srcImg.src=STARTER;
-  if(srcImg.complete && srcImg.naturalWidth) loadSource(srcImg);
-  else srcImg.onload=()=>loadSource(srcImg);
+  const go=()=>{ loadSource(srcImg); if(p.get('play')==='1') startAnim(); };
+  if(srcImg.complete && srcImg.naturalWidth) go();
+  else srcImg.onload=go;
 })();
 </script>
 </body>
