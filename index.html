@@ -39,6 +39,7 @@
     padding:8px 14px; font-weight:600; cursor:pointer; font-size:13px;
   }
   button.ghost { background:#2a3042; color:var(--ink); }
+  button.ghost.active { background:var(--accent); color:#0b1020; box-shadow:0 0 0 2px rgba(122,162,247,.4); }
   .chk { display:flex; gap:8px; align-items:center; margin-top:14px; color:var(--ink); }
   .formula { margin-top:18px; padding:12px; background:#0e1017; border-radius:8px;
              color:var(--muted); font-size:12px; }
@@ -84,9 +85,8 @@
     <input type="range" id="speed" min="0.02" max="2" step="0.01" value="0.16">
 
     <div class="row">
-      <button id="zin">⊕ Zoom in</button>
-      <button id="zout">⊖ Zoom out</button>
-      <button class="ghost" id="pause">⏸ Pause</button>
+      <button class="ghost" id="zin">⊕ Zoom in</button>
+      <button class="ghost" id="zout">⊖ Zoom out</button>
     </div>
     <div class="row">
       <button class="ghost" id="reset">Reset rectangle</button>
@@ -205,7 +205,7 @@ function render(){
   // about F, so the recursion stays correct -- this just reframes the output.
   const Ox = $('centerout').checked ? 0 : Fx;
   const Oy = $('centerout').checked ? 0 : Fy;
-  const ss = anim ? 2 : 3;          // supersample grid (lighter while animating)
+  const ss = 3;                         // permanent 3x3 supersampled anti-aliasing
 
   gl.useProgram(prog);
   gl.uniform2f(U.uRes,N,N); gl.uniform2f(U.F,Fx,Fy); gl.uniform2f(U.O,Ox,Oy);
@@ -352,11 +352,17 @@ function animFrame(now){
 function startAnim(dir){
   if(anim){ anim.dir=dir; }
   else { anim={dir, last:performance.now(), raf:0}; anim.raf=requestAnimationFrame(animFrame); }
+  updateAnimUI();
 }
-function stopAnim(){ if(anim){ cancelAnimationFrame(anim.raf); anim=null; } }
-$('zin').addEventListener('click',()=>startAnim(+1));   // increase slider = zoom in
-$('zout').addEventListener('click',()=>startAnim(-1));
-$('pause').addEventListener('click',stopAnim);
+function stopAnim(){ if(anim){ cancelAnimationFrame(anim.raf); anim=null; } updateAnimUI(); }
+function updateAnimUI(){
+  const d = anim ? anim.dir : 0;
+  $('zin').classList.toggle('active', d===+1);
+  $('zout').classList.toggle('active', d===-1);
+}
+// self-toggling buttons: click the active direction to stop, or switch direction
+$('zin').addEventListener('click',()=>{ (anim&&anim.dir===+1)?stopAnim():startAnim(+1); });
+$('zout').addEventListener('click',()=>{ (anim&&anim.dir===-1)?stopAnim():startAnim(-1); });
 $('save').addEventListener('click',()=>{
   const A=document.createElement('a');
   A.download='escher-warp.png'; A.href=out.toDataURL('image/png'); A.click();
@@ -393,7 +399,8 @@ const STARTER='assets/selfsimilar.png', STARTER_Q=8;
   a = 1/parseFloat(p.get('q') ?? STARTER_Q);
   RCx = parseFloat(p.get('rcx') ?? 0); RCy = parseFloat(p.get('rcy') ?? 0);
   srcImg.src=STARTER;
-  const go=()=>{ loadSource(srcImg); if(p.get('play')==='1') startAnim(+1); };
+  // start with the zoom animating (in), unless explicitly disabled with ?play=0
+  const go=()=>{ loadSource(srcImg); if(p.get('play')!=='0') startAnim(+1); };
   if(srcImg.complete && srcImg.naturalWidth) go();
   else srcImg.onload=go;
 })();
