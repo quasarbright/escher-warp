@@ -24,8 +24,7 @@
     box-shadow:0 8px 30px rgba(0,0,0,.4);
     width:450px; height:450px; image-rendering:auto;
   }
-  #ov { position:absolute; inset:0; box-shadow:none; background:transparent; cursor:grab; }
-  #ov.dragging { cursor:grabbing; }
+  #ov { position:absolute; inset:0; box-shadow:none; background:transparent; cursor:default; }
   .panel {
     background:var(--panel); border-radius:14px; padding:18px 20px;
     min-width:300px; max-width:340px;
@@ -256,47 +255,71 @@ function drawOverlay(){
 }
 
 // ---- interaction ----
-let drag=null; // {type:'move'|'corner', idx, startN, startRC, startA}
+// corner i = F + a*(K_i - F), with K_i the matching image corner (+/-1,+/-1).
+const KCORNER=[[-1,-1],[1,-1],[1,1],[-1,1]]; // TL,TR,BR,BL (matches drawOverlay order)
+let drag=null; // {type:'move'|'corner', idx, F, startN, startRC}
 function evN(e){
   const rc=ov.getBoundingClientRect();
   return c2n((e.clientX-rc.left)/rc.width*N, (e.clientY-rc.top)/rc.height*N);
 }
+function cornerAt(cx,cy){ // canvas px -> corner index or -1
+  const {x0,y0,x1,y1}=rectCornersC();
+  const corners=[[x0,y0],[x1,y0],[x1,y1],[x0,y1]];
+  for(let i=0;i<4;i++)
+    if(Math.abs(cx-corners[i][0])<9 && Math.abs(cy-corners[i][1])<9) return i;
+  return -1;
+}
+function cursorFor(cx,cy){
+  const ci=cornerAt(cx,cy);
+  if(ci>=0) return (ci===0||ci===2)?'nwse-resize':'nesw-resize';
+  const [nx,ny]=c2n(cx,cy);
+  return (nx>RCx-a&&nx<RCx+a&&ny>RCy-a&&ny<RCy+a)?'grab':'default';
+}
 ov.addEventListener('pointerdown',e=>{
   ov.setPointerCapture(e.pointerId);
-  const {x0,y0,x1,y1}=rectCornersC();
   const rc=ov.getBoundingClientRect();
   const cx=(e.clientX-rc.left)/rc.width*N, cy=(e.clientY-rc.top)/rc.height*N;
-  const corners=[[x0,y0],[x1,y0],[x1,y1],[x0,y1]];
-  for(let i=0;i<4;i++){
-    if(Math.abs(cx-corners[i][0])<9 && Math.abs(cy-corners[i][1])<9){
-      drag={type:'corner', idx:i}; ov.classList.add('dragging'); return;
-    }
+  const ci=cornerAt(cx,cy);
+  if(ci>=0){
+    const {Fx,Fy}=rectParams();            // keep this F fixed while resizing
+    drag={type:'corner', idx:ci, F:[Fx,Fy]};
+    ov.style.cursor=(ci===0||ci===2)?'nwse-resize':'nesw-resize';
+    return;
   }
-  // inside?
   const [nx,ny]=c2n(cx,cy);
   if(nx>RCx-a && nx<RCx+a && ny>RCy-a && ny<RCy+a){
     drag={type:'move', startN:[nx,ny], startRC:[RCx,RCy]};
-    ov.classList.add('dragging');
+    ov.style.cursor='grabbing';
   }
 });
 ov.addEventListener('pointermove',e=>{
-  if(!drag) return;
+  if(!drag){
+    const rc=ov.getBoundingClientRect();
+    ov.style.cursor=cursorFor((e.clientX-rc.left)/rc.width*N,(e.clientY-rc.top)/rc.height*N);
+    return;
+  }
   const [nx,ny]=evN(e);
   if(drag.type==='move'){
     RCx = drag.startRC[0] + (nx-drag.startN[0]);
     RCy = drag.startRC[1] + (ny-drag.startN[1]);
   } else {
-    // opposite corner stays fixed; keep square (aspect-locked in normalized coords)
-    const opp=[ [RCx+a,RCy+a],[RCx-a,RCy+a],[RCx-a,RCy-a],[RCx+a,RCy-a] ][drag.idx];
-    const s=Math.max(Math.abs(nx-opp[0]),Math.abs(ny-opp[1]))/2;
-    const na=Math.max(0.01, Math.min(0.95, s));
-    const sx = nx>=opp[0]?1:-1, sy = ny>=opp[1]?1:-1;
-    RCx = opp[0] + sx*na; RCy = opp[1] + sy*na; a = na;
+    // scale about the fixed point F: project the mouse onto the ray F -> K_i
+    const [Fx,Fy]=drag.F, [Kx,Ky]=KCORNER[drag.idx];
+    const dx=Kx-Fx, dy=Ky-Fy;
+    let na=((nx-Fx)*dx+(ny-Fy)*dy)/(dx*dx+dy*dy);
+    a=Math.max(0.02, Math.min(0.95, na));
+    RCx=Fx*(1-a); RCy=Fy*(1-a);            // center that keeps F unchanged
   }
   drawOverlay();
   scheduleRender(0);
 });
-function endDrag(){ if(drag){ drag=null; ov.classList.remove('dragging'); render(1);} }
+function endDrag(e){
+  if(!drag) return;
+  drag=null;
+  if(e){ const rc=ov.getBoundingClientRect();
+    ov.style.cursor=cursorFor((e.clientX-rc.left)/rc.width*N,(e.clientY-rc.top)/rc.height*N); }
+  render(1);
+}
 ov.addEventListener('pointerup',endDrag);
 ov.addEventListener('pointercancel',endDrag);
 
